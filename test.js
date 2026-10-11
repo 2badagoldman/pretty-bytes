@@ -1,6 +1,9 @@
 import test from 'ava';
 import prettyBytes from './index.js';
 
+const BYTE_UNITS = ['B', 'kB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
+const BIBYTE_UNITS = ['B', 'KiB', 'MiB', 'GiB', 'TiB', 'PiB', 'EiB', 'ZiB', 'YiB'];
+
 test('throws on invalid input', t => {
 	t.throws(() => {
 		prettyBytes('');
@@ -127,6 +130,43 @@ test('locale option', t => {
 	t.is(prettyBytes(1e30, {locale: undefined}), '1000000 YB');
 	t.is(prettyBytes(10n ** 30n, {locale: undefined}), '1000000 YB');
 	t.is(prettyBytes(827_181 * 1e26, {locale: undefined}), '82718100 YB');
+});
+
+test('rounding carries over to the next unit', t => {
+	t.is(prettyBytes(999_999), '1 MB');
+	t.is(prettyBytes(999_999n), '1 MB');
+	t.is(prettyBytes(-999_999), '-1 MB');
+	t.is(prettyBytes(999.9), '1 kB');
+	t.is(prettyBytes(999.5), '1 kB');
+	t.is(prettyBytes(999_999, {bits: true}), '1 Mbit');
+	t.is(prettyBytes(999_999, {signed: true}), '+1 MB');
+	t.is(prettyBytes(999_999, {locale: 'de'}), '1 MB');
+	t.is(prettyBytes(1_048_575, {binary: true}), '1 MiB');
+	t.is(prettyBytes(1_048_575n, {binary: true}), '1 MiB');
+	t.is(prettyBytes(1023.9, {binary: true}), '1 KiB');
+	t.is(prettyBytes(1_048_575, {bits: true, binary: true}), '1 Mibit');
+
+	for (let exponent = 1; exponent < BYTE_UNITS.length; exponent++) {
+		t.is(prettyBytes(0.9999 * (1000 ** exponent)), `1 ${BYTE_UNITS[exponent]}`);
+		t.is(prettyBytes(0.9999 * (1024 ** exponent), {binary: true}), `1 ${BIBYTE_UNITS[exponent]}`);
+	}
+
+	for (let exponent = 2; exponent < BYTE_UNITS.length; exponent++) {
+		t.is(prettyBytes((1000n ** BigInt(exponent)) - 1n), `1 ${BYTE_UNITS[exponent]}`);
+		t.is(prettyBytes((1024n ** BigInt(exponent)) - 1n, {binary: true}), `1 ${BIBYTE_UNITS[exponent]}`);
+	}
+
+	// No unit above YB/YiB to carry into
+	t.is(prettyBytes(0.9999 * (1000 ** 9)), '1000 YB');
+	t.is(prettyBytes((1000n ** 9n) - 1n), '1000 YB');
+	t.is(prettyBytes(0.9999 * (1024 ** 9), {binary: true}), '1024 YiB');
+
+	// Values that round down are unchanged
+	t.is(prettyBytes(999.499 * 1000), '999 kB');
+	t.is(prettyBytes(999_499n), '999 kB');
+	t.is(prettyBytes(999.4), '999 B');
+	t.is(prettyBytes(1023.4 * 1024, {binary: true}), '1023 KiB');
+	t.is(prettyBytes(1_000_000 - 1, {maximumFractionDigits: 1}), '999.9 kB');
 });
 
 test('signed option', t => {
