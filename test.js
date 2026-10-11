@@ -341,3 +341,29 @@ test('fixedWidth option', t => {
 	// With non-breaking space
 	t.is(prettyBytes(1337, {fixedWidth: 8, nonBreakingSpace: true}), ' 1.34\u00A0kB');
 });
+
+test('rounding carries across unit boundaries', t => {
+	t.is(prettyBytes(999_999), '1 MB');
+	t.is(prettyBytes(999_999n), '1 MB');
+	t.is(prettyBytes(1_048_575, {binary: true}), '1 MiB');
+	t.is(prettyBytes(1_048_575n, {binary: true}), '1 MiB');
+	t.is(prettyBytes(999.9), '1 kB');
+	t.is(prettyBytes(-999_999), '-1 MB');
+	t.is(prettyBytes(999_999, {bits: true}), '1 Mbit');
+	t.is(prettyBytes(999.499 * 1000), '999 kB');
+	t.is(prettyBytes(1_048_575 - 600, {binary: true}), '1023 KiB');
+
+	for (let index = 1; index < 8; index++) {
+		const decimal = (10n ** BigInt(3 * (index + 1))) - 1n;
+		const binary = (2n ** BigInt(10 * (index + 1))) - 1n;
+		const decimalUnit = prettyBytes(10n ** BigInt(3 * (index + 1))).split(' ')[1];
+		const binaryUnit = prettyBytes(2n ** BigInt(10 * (index + 1)), {binary: true}).split(' ')[1];
+		t.is(prettyBytes(decimal), `1 ${decimalUnit}`);
+		t.is(prettyBytes(Number(decimal)), `1 ${decimalUnit}`);
+		t.is(prettyBytes(binary, {binary: true}), `1 ${binaryUnit}`);
+		t.is(prettyBytes(Number(binary), {binary: true}), `1 ${binaryUnit}`);
+	}
+
+	// Largest unit cannot carry further
+	t.is(prettyBytes(999_999 * 1e24), '999999 YB');
+});

@@ -161,11 +161,26 @@ export default function prettyBytes(number, options) {
 		exponent = Math.min(Math.floor(options.binary ? log(number) / Math.log(1024) : log10(number) / 3), UNITS.length - 1);
 	}
 
-	number = divide(number, (options.binary ? 1024 : 1000) ** exponent);
+	const base = options.binary ? 1024 : 1000;
+	const original = number;
+	const scale = exponent => {
+		let value = divide(original, base ** exponent);
 
-	if (!localeOptions) {
-		const minPrecision = Math.max(3, Math.floor(number).toString().length);
-		number = Number(number.toPrecision(minPrecision));
+		if (!localeOptions) {
+			const minPrecision = Math.max(3, Math.floor(value).toString().length);
+			value = Number(value.toPrecision(minPrecision));
+		}
+
+		return value;
+	};
+
+	number = scale(exponent);
+
+	// Rounding can push the value up to the next unit boundary (e.g. 999.9 kB -> 1000 kB)
+	// This loop handles the case where rounding causes the value to reach or exceed the base
+	while (number >= base && exponent < UNITS.length - 1) {
+		exponent++;
+		number = scale(exponent);
 	}
 
 	const numberString = toLocaleString(number, options.locale, localeOptions);
