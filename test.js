@@ -341,3 +341,92 @@ test('fixedWidth option', t => {
 	// With non-breaking space
 	t.is(prettyBytes(1337, {fixedWidth: 8, nonBreakingSpace: true}), ' 1.34\u00A0kB');
 });
+
+test('rounding carries across unit boundaries', t => {
+	t.is(prettyBytes(999_999), '1 MB');
+	t.is(prettyBytes(999_999n), '1 MB');
+	t.is(prettyBytes(1_048_575, {binary: true}), '1 MiB');
+	t.is(prettyBytes(1_048_575n, {binary: true}), '1 MiB');
+	t.is(prettyBytes(999.499 * 1000), '999 kB');
+	t.is(prettyBytes(-999_999), '-1 MB');
+	t.is(prettyBytes(999.5), '1 kB');
+	t.is(prettyBytes(999.4), '999 B');
+
+	for (let i = 1; i < 8; i++) {
+		const decimal = (10n ** BigInt(3 * (i + 1))) - 1n;
+		const binary = 2n ** BigInt(10 * (i + 1));
+		const binaryMinusOne = binary - 1n;
+		const dUnit = ['kB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'][i];
+		const bUnit = ['KiB', 'MiB', 'GiB', 'TiB', 'PiB', 'EiB', 'ZiB', 'YiB'][i];
+		t.is(prettyBytes(decimal), `1 ${dUnit}`);
+		t.is(prettyBytes(Number(decimal)), `1 ${dUnit}`);
+		t.is(prettyBytes(binaryMinusOne, {binary: true}), `1 ${bUnit}`);
+		t.is(prettyBytes(Number(binaryMinusOne), {binary: true}), `1 ${bUnit}`);
+	}
+
+	// Values just under each boundary (B up to YB/YiB), as Number and BigInt
+	const decimalUnits = ['kB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
+	const binaryUnits = ['KiB', 'MiB', 'GiB', 'TiB', 'PiB', 'EiB', 'ZiB', 'YiB'];
+	for (let i = 0; i < 8; i++) {
+		for (const [base, units, binary] of [[1000n, decimalUnits, false], [1024n, binaryUnits, true]]) {
+			const boundary = base ** BigInt(i + 1);
+			const under = boundary - (boundary / 4000n) - 1n;
+			const fraction = Number(boundary) * (1 - (1 / 4000));
+			t.is(prettyBytes(fraction, {binary}), `1 ${units[i]}`);
+			t.is(prettyBytes(-fraction, {binary}), `-1 ${units[i]}`);
+			if (i > 0) {
+				t.is(prettyBytes(under, {binary}), `1 ${units[i]}`);
+			}
+		}
+	}
+
+	// 4 significant digits at exponent 0: 1023.6 rounds to 1024 (carries), 1023.4 rounds to 1023
+	t.is(prettyBytes(1023.6, {binary: true}), '1 KiB');
+	t.is(prettyBytes(1023.4, {binary: true}), '1023 B');
+
+	// Exact rounding thresholds for every unit (999.5 / 1023.5 of the unit), Number and BigInt
+	for (let i = 1; i < 8; i++) {
+		const dUnit = 1000n ** BigInt(i);
+		const bUnit = 1024n ** BigInt(i);
+		const dNames = ['kB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
+		const bNames = ['KiB', 'MiB', 'GiB', 'TiB', 'PiB', 'EiB', 'ZiB', 'YiB'];
+		t.is(prettyBytes((dUnit * 9995n) / 10n), `1 ${dNames[i]}`);
+		t.is(prettyBytes(Number((dUnit * 9995n) / 10n)), `1 ${dNames[i]}`);
+		t.is(prettyBytes((bUnit * 10_235n) / 10n, {binary: true}), `1 ${bNames[i]}`);
+		t.is(prettyBytes(Number((bUnit * 10_235n) / 10n), {binary: true}), `1 ${bNames[i]}`);
+	}
+
+	// Largest unit never carries further
+	t.is(prettyBytes(1000n ** 9n), '1000 YB');
+});
+
+test('rounding carries with fraction digit options', t => {
+	t.is(prettyBytes(999_999, {maximumFractionDigits: 0}), '1 MB');
+	t.is(prettyBytes(999_999n, {maximumFractionDigits: 0}), '1 MB');
+	t.is(prettyBytes(999_999, {maximumFractionDigits: 1}), '1 MB');
+	t.is(prettyBytes(999_999, {minimumFractionDigits: 1, maximumFractionDigits: 1}), '1.0 MB');
+	t.is(prettyBytes(1_048_575, {binary: true, maximumFractionDigits: 0}), '1 MiB');
+	t.is(prettyBytes(999_999, {maximumFractionDigits: 0, fixedWidth: 6}), '  1 MB');
+	t.is(prettyBytes(999_499, {maximumFractionDigits: 0}), '999 kB');
+	t.is(prettyBytes((1000n ** 9n) - 1n, {maximumFractionDigits: 0}), '1,000 YB');
+});
+
+test('rounding carries for every unit with fraction digit options', t => {
+	const decimal = ['kB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
+	const binary = ['KiB', 'MiB', 'GiB', 'TiB', 'PiB', 'EiB', 'ZiB', 'YiB'];
+	for (let i = 2; i <= 8; i++) {
+		for (const [base, names, isBinary] of [[1000n, decimal, false], [1024n, binary, true]]) {
+			const value = (base ** BigInt(i)) - 1n;
+			const expected = `1 ${names[i - 1]}`;
+			t.is(prettyBytes(value, {binary: isBinary, maximumFractionDigits: 0}), expected);
+			t.is(prettyBytes(Number(value), {binary: isBinary, maximumFractionDigits: 0}), expected);
+			t.is(prettyBytes(-value, {binary: isBinary, maximumFractionDigits: 0}), `-${expected}`);
+			t.is(prettyBytes(value, {binary: isBinary, minimumFractionDigits: 1, maximumFractionDigits: 1}), `1.0 ${names[i - 1]}`);
+		}
+	}
+
+	// Floating-point error in the logarithm must not yield 0 of the next unit
+	t.is(prettyBytes(999_999_999_999_999), '1 PB');
+	t.is(prettyBytes(999_999_999_999_999n), '1 PB');
+	t.is(prettyBytes((2 ** 50) - 1, {binary: true}), '1 PiB');
+});

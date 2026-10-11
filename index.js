@@ -121,6 +121,7 @@ const buildLocaleOptions = options => {
 	};
 };
 
+// eslint-disable-next-line complexity
 export default function prettyBytes(number, options) {
 	if (typeof number !== 'bigint' && !Number.isFinite(number)) {
 		throw new TypeError(`Expected a finite number, got ${typeof number}: ${number}`);
@@ -161,11 +162,34 @@ export default function prettyBytes(number, options) {
 		exponent = Math.min(Math.floor(options.binary ? log(number) / Math.log(1024) : log10(number) / 3), UNITS.length - 1);
 	}
 
-	number = divide(number, (options.binary ? 1024 : 1000) ** exponent);
+	const base = options.binary ? 1024 : 1000;
+	number = divide(number, base ** exponent);
 
-	if (!localeOptions) {
+	// Floating-point error in the logarithm can overshoot the exponent (e.g. 999999999999999 -> 0.999... PB).
+	if (number < 1 && exponent > 0) {
+		exponent--;
+		number *= base;
+	}
+
+	let rounded;
+	if (localeOptions) {
+		// Round with the same fraction-digit settings (grouping off so it parses back).
+		const {minimumFractionDigits, maximumFractionDigits} = options;
+		rounded = Number(number.toLocaleString('en-US', {
+			useGrouping: false,
+			...(minimumFractionDigits !== undefined && {minimumFractionDigits}),
+			...(maximumFractionDigits !== undefined && {maximumFractionDigits}),
+		}));
+	} else {
 		const minPrecision = Math.max(3, Math.floor(number).toString().length);
-		number = Number(number.toPrecision(minPrecision));
+		rounded = Number(number.toPrecision(minPrecision));
+		number = rounded;
+	}
+
+	// Rounding may have reached the next unit (e.g. 999.9 kB -> 1000 kB), so carry over.
+	if (rounded >= base && exponent < UNITS.length - 1) {
+		number = 1;
+		exponent++;
 	}
 
 	const numberString = toLocaleString(number, options.locale, localeOptions);
