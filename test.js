@@ -341,3 +341,38 @@ test('fixedWidth option', t => {
 	// With non-breaking space
 	t.is(prettyBytes(1337, {fixedWidth: 8, nonBreakingSpace: true}), ' 1.34\u00A0kB');
 });
+
+test('rounding carries across unit boundaries', t => {
+	t.is(prettyBytes(999_999), '1 MB');
+	t.is(prettyBytes(999_999n), '1 MB');
+	t.is(prettyBytes(1_048_575, {binary: true}), '1 MiB');
+	t.is(prettyBytes(1_048_575n, {binary: true}), '1 MiB');
+	t.is(prettyBytes(999.9), '1 kB');
+	t.is(prettyBytes(-999_999), '-1 MB');
+	t.is(prettyBytes(999_999, {bits: true}), '1 Mbit');
+	t.is(prettyBytes(1_048_575, {bits: true, binary: true}), '1 Mibit');
+
+	// Every unit boundary, decimal and binary, number and BigInt
+	for (let exponent = 1; exponent < 8; exponent++) {
+		const decimalUnits = ['kB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
+		const binaryUnits = ['KiB', 'MiB', 'GiB', 'TiB', 'PiB', 'EiB', 'ZiB', 'YiB'];
+		const decimalBoundary = 10n ** BigInt(3 * (exponent + 1));
+		const binaryBoundary = 2n ** BigInt(10 * (exponent + 1));
+
+		t.is(prettyBytes(Number(decimalBoundary - 1n)), `1 ${decimalUnits[exponent]}`);
+		t.is(prettyBytes(decimalBoundary - 1n), `1 ${decimalUnits[exponent]}`);
+		t.is(prettyBytes(Number(binaryBoundary - 1n), {binary: true}), `1 ${binaryUnits[exponent]}`);
+		t.is(prettyBytes(binaryBoundary - 1n, {binary: true}), `1 ${binaryUnits[exponent]}`);
+	}
+
+	// Largest unit has nowhere to carry to
+	t.is(prettyBytes(999_999 * 1e24), '999999 YB');
+
+	// Values that round down are unchanged
+	t.is(prettyBytes(999.499 * 1000), '999 kB');
+	t.is(prettyBytes(999.4), '999 B');
+	t.is(prettyBytes(1_048_000, {binary: true}), '1023 KiB');
+
+	// Truncating fraction digits never rounds up
+	t.is(prettyBytes(999_999, {maximumFractionDigits: 1}), '999.9 kB');
+});
