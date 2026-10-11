@@ -81,14 +81,15 @@ const log = numberOrBigInt => {
 	return log10(numberOrBigInt) * Math.log(10);
 };
 
-const divide = (numberOrBigInt, divisor) => {
+const divide = (numberOrBigInt, base, exponent) => {
 	if (typeof numberOrBigInt === 'number') {
-		return numberOrBigInt / divisor;
+		return numberOrBigInt / (base ** exponent);
 	}
 
-	const integerPart = numberOrBigInt / BigInt(divisor);
-	const remainder = numberOrBigInt % BigInt(divisor);
-	return Number(integerPart) + (Number(remainder) / divisor);
+	const divisor = BigInt(base) ** BigInt(exponent);
+	const integerPart = numberOrBigInt / divisor;
+	const remainder = numberOrBigInt % divisor;
+	return Number(integerPart) + (Number(remainder) / Number(divisor));
 };
 
 const applyFixedWidth = (result, fixedWidth) => {
@@ -156,19 +157,33 @@ export default function prettyBytes(number, options) {
 
 	const localeOptions = buildLocaleOptions(options);
 
+	const base = options.binary ? 1024 : 1000;
+
 	let exponent = 0;
 	if (number >= 1) {
 		exponent = Math.min(Math.floor(options.binary ? log(number) / Math.log(1024) : log10(number) / 3), UNITS.length - 1);
 	}
 
-	number = divide(number, (options.binary ? 1024 : 1000) ** exponent);
+	const scale = exponent => {
+		const value = divide(number, base, exponent);
 
-	if (!localeOptions) {
-		const minPrecision = Math.max(3, Math.floor(number).toString().length);
-		number = Number(number.toPrecision(minPrecision));
+		if (localeOptions) {
+			return value;
+		}
+
+		const minPrecision = Math.max(3, Math.floor(value).toString().length);
+		return Number(value.toPrecision(minPrecision));
+	};
+
+	let value = scale(exponent);
+
+	// Carry into the next unit when rounding reaches the base (e.g. `999.9 kB` → `1 MB`)
+	while (value >= base && exponent < UNITS.length - 1) {
+		exponent++;
+		value = Math.max(1, scale(exponent));
 	}
 
-	const numberString = toLocaleString(number, options.locale, localeOptions);
+	const numberString = toLocaleString(value, options.locale, localeOptions);
 	const result = prefix + numberString + separator + UNITS[exponent];
 	return applyFixedWidth(result, options.fixedWidth);
 }
