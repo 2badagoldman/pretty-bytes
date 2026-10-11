@@ -341,3 +341,48 @@ test('fixedWidth option', t => {
 	// With non-breaking space
 	t.is(prettyBytes(1337, {fixedWidth: 8, nonBreakingSpace: true}), ' 1.34\u00A0kB');
 });
+
+test('carries rounded values across unit boundaries', t => {
+	t.is(prettyBytes(999_999), '1 MB');
+	t.is(prettyBytes(999_999n), '1 MB');
+	t.is(prettyBytes(999_999_999), '1 GB');
+	t.is(prettyBytes(1_048_575, {binary: true}), '1 MiB');
+	t.is(prettyBytes(1_048_575n, {binary: true}), '1 MiB');
+	t.is(prettyBytes(999_999, {bits: true}), '1 Mbit');
+	t.is(prettyBytes(1_048_575, {bits: true, binary: true}), '1 Mibit');
+	t.is(prettyBytes(-999_999), '-1 MB');
+	t.is(prettyBytes(999_999, {signed: true}), '+1 MB');
+	t.is(prettyBytes(-1_048_575n, {binary: true}), '-1 MiB');
+
+	// Every unit boundary, decimal and binary, number and BigInt
+	const decimal = ['kB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
+	const binary = ['KiB', 'MiB', 'GiB', 'TiB', 'PiB', 'EiB', 'ZiB', 'YiB'];
+	for (let index = 1; index < 8; index++) {
+		const edge = (10n ** BigInt(3 * (index + 1))) - 1n;
+		t.is(prettyBytes(edge), `1 ${decimal[index]}`);
+		t.is(prettyBytes(edge, {bits: true}).startsWith('1 '), true);
+		t.is(prettyBytes(Number(edge)), `1 ${decimal[index]}`);
+		const binaryEdge = (2n ** BigInt(10 * (index + 1))) - 1n;
+		t.is(prettyBytes(binaryEdge, {binary: true}), `1 ${binary[index]}`);
+		t.is(prettyBytes(Number(binaryEdge), {binary: true}), `1 ${binary[index]}`);
+	}
+
+	// B -> kB
+	t.is(prettyBytes(999.5), '1 kB');
+	t.is(prettyBytes(1023.5, {binary: true}), '1 KiB');
+
+	// Last unit has nowhere to carry
+	t.is(prettyBytes((10n ** 24n) * 999_999n), '999999 YB');
+
+	// Fraction digit options
+	t.is(prettyBytes(999_999, {maximumFractionDigits: 3}), '999.999 kB');
+	t.is(prettyBytes(999_999, {maximumFractionDigits: 0}), '999 kB'); // Truncated, never shows 1000
+	t.is(prettyBytes(999_999, {minimumFractionDigits: 1}), '999.999 kB');
+
+	// Values that round down must not change
+	t.is(prettyBytes(999.499 * 1000), '999 kB');
+	t.is(prettyBytes(999_400), '999 kB');
+	t.is(prettyBytes(999_400n), '999 kB');
+	t.is(prettyBytes(999_400, {maximumFractionDigits: 0}), '999 kB');
+	t.is(prettyBytes(1_048_000, {binary: true}), '1023 KiB');
+});

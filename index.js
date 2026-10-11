@@ -161,12 +161,29 @@ export default function prettyBytes(number, options) {
 		exponent = Math.min(Math.floor(options.binary ? log(number) / Math.log(1024) : log10(number) / 3), UNITS.length - 1);
 	}
 
-	number = divide(number, (options.binary ? 1024 : 1000) ** exponent);
+	const base = options.binary ? 1024 : 1000;
 
-	if (!localeOptions) {
-		const minPrecision = Math.max(3, Math.floor(number).toString().length);
-		number = Number(number.toPrecision(minPrecision));
+	// Mirrors the precision applied to the output, so we know what will be displayed
+	const round = value => {
+		if (!localeOptions) {
+			const minPrecision = Math.max(3, Math.floor(value).toString().length);
+			return Number(value.toPrecision(minPrecision));
+		}
+
+		// Format exactly like the output would, but locale-independent, and parse it back
+		return Number(value.toLocaleString('en-US', {...localeOptions, useGrouping: false}));
+	};
+
+	const original = number;
+	let value = round(divide(original, base ** exponent));
+
+	// Carry values that round up to the next unit (e.g. 999999 B -> 1 MB, not 1000 kB)
+	if (value >= base && exponent < UNITS.length - 1) {
+		exponent++;
+		value = round(divide(original, base ** exponent));
 	}
+
+	number = value;
 
 	const numberString = toLocaleString(number, options.locale, localeOptions);
 	const result = prefix + numberString + separator + UNITS[exponent];
