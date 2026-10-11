@@ -341,3 +341,61 @@ test('fixedWidth option', t => {
 	// With non-breaking space
 	t.is(prettyBytes(1337, {fixedWidth: 8, nonBreakingSpace: true}), ' 1.34\u00A0kB');
 });
+
+test('rounding carries across unit boundaries', t => {
+	t.is(prettyBytes(999_999), '1 MB');
+	t.is(prettyBytes(999_999n), '1 MB');
+	t.is(prettyBytes(1_048_575, {binary: true}), '1 MiB');
+	t.is(prettyBytes(1_048_575n, {binary: true}), '1 MiB');
+	t.is(prettyBytes(999.499 * 1000), '999 kB');
+	t.is(prettyBytes(-999_999), '-1 MB');
+	t.is(prettyBytes(999.5), '1 kB');
+	t.is(prettyBytes(999_999, {bits: true}), '1 Mbit');
+	t.is(prettyBytes(1_048_575, {bits: true, binary: true}), '1 Mibit');
+
+	for (const [index, next] of ['MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'].entries()) {
+		const base = 1000n ** BigInt(index + 2);
+		t.is(prettyBytes(base - 1n), `1 ${next}`);
+		t.is(prettyBytes(Number(base - 1n)), `1 ${next}`);
+		t.is(prettyBytes(base), `1 ${next}`);
+	}
+
+	// Truncating mode (fraction digit options) never rounds up
+	t.is(prettyBytes(999_999, {maximumFractionDigits: 0}), '999 kB');
+
+	for (const [index, next] of ['MiB', 'GiB', 'TiB', 'PiB', 'EiB', 'ZiB', 'YiB'].entries()) {
+		const base = 1024n ** BigInt(index + 2);
+		t.is(prettyBytes(base - 1n, {binary: true}), `1 ${next}`);
+		t.is(prettyBytes(Number(base - 1n), {binary: true}), `1 ${next}`);
+	}
+
+	// Largest unit has nowhere to carry
+	t.is(prettyBytes(999_999 * 1e24), '999999 YB');
+
+	// Every boundary, both sides, Number and BigInt, decimal and binary (kB->MB ... ZB->YB)
+	const decimalUnits = ['kB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
+	const binaryUnits = ['KiB', 'MiB', 'GiB', 'TiB', 'PiB', 'EiB', 'ZiB', 'YiB'];
+	for (const [units, base, binary] of [[decimalUnits, 1000n, false], [binaryUnits, 1024n, true]]) {
+		for (let index = 1; index < 8; index++) {
+			const unit = base ** BigInt(index);
+			const boundary = unit * base;
+			const roundsUp = boundary - (unit / 2n);
+			const roundsDown = boundary - (unit / 2n) - (unit / 100n);
+			const lower = binary ? '1023' : '999';
+			for (const convert of [BigInt, Number]) {
+				t.is(prettyBytes(convert(roundsUp), {binary}), `1 ${units[index]}`);
+				t.is(prettyBytes(convert(roundsDown), {binary}), `${lower} ${units[index - 1]}`);
+			}
+		}
+	}
+
+	// B -> kB / KiB with fractions
+	t.is(prettyBytes(999.4), '999 B');
+	t.is(prettyBytes(1023.5, {binary: true}), '1 KiB');
+	t.is(prettyBytes(1023.4, {binary: true}), '1023 B');
+
+	// Largest unit has nowhere to carry
+	t.is(prettyBytes((10n ** 27n) - 1n), '1000 YB');
+	t.is(prettyBytes((1024n ** 9n) - 1n, {binary: true}), '1024 YiB');
+});
+

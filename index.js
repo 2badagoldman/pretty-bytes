@@ -166,6 +166,12 @@ export default function prettyBytes(number, options) {
 	if (!localeOptions) {
 		const minPrecision = Math.max(3, Math.floor(number).toString().length);
 		number = Number(number.toPrecision(minPrecision));
+
+		// Rounding may have reached the next unit boundary (for example 999.9 kB -> 1000 kB)
+		if (number >= (options.binary ? 1024 : 1000) && exponent < UNITS.length - 1) {
+			number = 1;
+			exponent++;
+		}
 	}
 
 	const numberString = toLocaleString(number, options.locale, localeOptions);
