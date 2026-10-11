@@ -341,3 +341,48 @@ test('fixedWidth option', t => {
 	// With non-breaking space
 	t.is(prettyBytes(1337, {fixedWidth: 8, nonBreakingSpace: true}), ' 1.34\u00A0kB');
 });
+
+test('rounding carries across unit boundaries', t => {
+	t.is(prettyBytes(999_999), '1 MB');
+	t.is(prettyBytes(999_999n), '1 MB');
+	t.is(prettyBytes(1_048_575, {binary: true}), '1 MiB');
+	t.is(prettyBytes(1_048_575n, {binary: true}), '1 MiB');
+	t.is(prettyBytes(999.499 * 1000), '999 kB');
+	t.is(prettyBytes(-999_999), '-1 MB');
+	t.is(prettyBytes(999.5), '1 kB');
+	t.is(prettyBytes(999.4), '999 B');
+
+	for (let i = 1; i < 8; i++) {
+		const decimal = (10n ** BigInt(3 * (i + 1))) - 1n;
+		const binary = 2n ** BigInt(10 * (i + 1));
+		const binaryMinusOne = binary - 1n;
+		const dUnit = ['kB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'][i];
+		const bUnit = ['KiB', 'MiB', 'GiB', 'TiB', 'PiB', 'EiB', 'ZiB', 'YiB'][i];
+		t.is(prettyBytes(decimal), `1 ${dUnit}`);
+		t.is(prettyBytes(Number(decimal)), `1 ${dUnit}`);
+		t.is(prettyBytes(binaryMinusOne, {binary: true}), `1 ${bUnit}`);
+		t.is(prettyBytes(Number(binaryMinusOne), {binary: true}), `1 ${bUnit}`);
+	}
+
+	// Values just under each boundary (B up to YB/YiB), as Number and BigInt
+	const decimalUnits = ['kB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
+	const binaryUnits = ['KiB', 'MiB', 'GiB', 'TiB', 'PiB', 'EiB', 'ZiB', 'YiB'];
+	for (let i = 0; i < 8; i++) {
+		for (const [base, units, binary] of [[1000n, decimalUnits, false], [1024n, binaryUnits, true]]) {
+			const boundary = base ** BigInt(i + 1);
+			const under = boundary - (boundary / 4000n) - 1n;
+			const fraction = Number(boundary) * (1 - (1 / 4000));
+			t.is(prettyBytes(fraction, {binary}), `1 ${units[i]}`);
+			t.is(prettyBytes(-fraction, {binary}), `-1 ${units[i]}`);
+			if (i > 0) {
+				t.is(prettyBytes(under, {binary}), `1 ${units[i]}`);
+			}
+		}
+	}
+
+	t.is(prettyBytes(1023.6, {binary: true}), '1 KiB');
+	t.is(prettyBytes(1023.4, {binary: true}), '1023 B');
+
+	// Largest unit never carries further
+	t.is(prettyBytes(1000n ** 9n), '1000 YB');
+});
